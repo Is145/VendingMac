@@ -1,0 +1,188 @@
+Imports ADODB
+Imports System.Data.OleDb
+Public Class Admin
+
+    Dim DecryptClass As New EncryptionClass
+    Public Dec As String
+    Public DecArr As String()
+    Dim ConfigStringReader As String
+    Dim Cnn As New ADODB.Connection
+
+
+    Private Sub Connect_to_DB() 'Private Sub - Connect to DB
+        Try
+            ConfigStringReader = System.IO.File.ReadAllLines(VendingMachine.Project_Dir & "\config\Config.txt")(0)
+            Dec = ""
+            Dec = DecryptClass.Decwrapper.DecryptData(ConfigStringReader)
+            DecArr = Dec.Split(New String() {Environment.NewLine}, StringSplitOptions.None)
+
+
+            If Cnn.State = ConnectionState.Closed Then
+                Cnn.ConnectionString = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & VendingMachine.Project_Dir & "\DB\VendingMachine.accdb;" & _
+                "Jet OLEDB:Database Password=" & DecArr(1) & ";"
+
+                Cnn.Open()
+            End If
+
+            'Exception Handiling - write exceptions to error log
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            VendingMachine.Write_to_ErrorLogFile(ex, MethodName)
+            VendingMachine.EC = VendingMachine.EC + 1
+        End Try
+    End Sub
+    Private Sub Admin_Load(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles MyBase.Load
+        Try
+            Me.Width = 300
+            Me.Location = New Point(VendingMachine.Bounds.Right, VendingMachine.Button_Admin.Location.Y)
+
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+
+            'Exception Handiling - write exceptions to error log
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            VendingMachine.Write_to_ErrorLogFile(ex, MethodName)
+            VendingMachine.EC = VendingMachine.EC + 1
+        End Try
+
+
+
+    End Sub
+    Sub anim() Handles Me.Shown
+        Try
+            Me.Refresh()
+            Do Until Me.Location.X = VendingMachine.Bounds.Right - Me.Size.Width
+                Me.Location = New Point(Me.Location.X - 1, VendingMachine.Button_Admin.Location.Y - 100)
+
+            Loop
+
+            If VendingMachine.Status = True Then
+                Button_RestockProducts.Visible = True
+                Button_ReloadCoins.Visible = True
+                Button_Login.Enabled = False
+            End If
+
+            'Exception Handiling - write exceptions to error log
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            VendingMachine.Write_to_ErrorLogFile(ex, MethodName)
+            VendingMachine.EC = VendingMachine.EC + 1
+        End Try
+
+    End Sub
+    Protected Overrides ReadOnly Property CreateParams() As CreateParams
+        Get
+            ' Turn on WS_EX_TOOLWINDOW style bit
+            Dim cp As CreateParams = MyBase.CreateParams
+            cp.ExStyle = (cp.ExStyle Or 128)
+            Return cp
+        End Get
+    End Property
+    Private Sub Button_Login_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button_Login.Click
+        Try
+            ConfigStringReader = System.IO.File.ReadAllLines(VendingMachine.Project_Dir & "\config\Config.txt")(0)
+            Dec = ""
+            Dec = DecryptClass.Decwrapper.DecryptData(ConfigStringReader)
+            DecArr = Dec.Split(New String() {Environment.NewLine}, StringSplitOptions.None)
+
+            If TextBox_User.Text = DecArr(3) And TextBox_Password.Text = DecArr(4) Then
+                VendingMachine.Status = True
+                Button_RestockProducts.Visible = True
+                Button_ReloadCoins.Visible = True
+                TextBox_EC.Visible = True
+                VendingMachine.Status = True
+            Else
+                MsgBox("Incorrect user or password. The user and password can be obtained from the readme.docx file", MsgBoxStyle.Exclamation, "Incorrect user/password:")
+            End If
+            'Exception Handiling - write exceptions to error log
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            VendingMachine.Write_to_ErrorLogFile(ex, MethodName)
+            VendingMachine.EC = VendingMachine.EC + 1
+        End Try
+
+
+    End Sub
+    Private Sub Button_Close_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button_Close.Click
+        Try
+            Me.Hide()
+            'Exception Handiling - write exceptions to error log
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            VendingMachine.Write_to_ErrorLogFile(ex, MethodName)
+            VendingMachine.EC = VendingMachine.EC + 1
+        End Try
+    End Sub
+    Private Sub Button_RestockProducts_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button_RestockProducts.Click
+        Try
+            Dim strsql_products As String = "SELECT Quantity FROM Products"
+            Dim objrs_Products = New ADODB.Recordset
+            Connect_to_DB()
+
+            'Re-stock Products
+            '***************************************************************************************************************
+            'Open the recordset and specify the sql command to get the data required. 
+            objrs_Products.Open(strsql_products, Cnn, CursorTypeEnum.adOpenKeyset, LockTypeEnum.adLockOptimistic)
+
+            Do While Not objrs_Products.EOF
+                objrs_Products("Quantity").Value = 20
+                objrs_Products.Update()
+                objrs_Products.MoveNext()
+            Loop
+            objrs_Products.Close()
+            '***************************************************************************************************************
+            Cnn.Close() ' close db connection.
+            VendingMachine.Refresh_Indicator()
+            MsgBox("All coins have been re-loaded to 100. Please press the ""Refresh Product"" button in the top left corner for the " & _
+                   "changes to take effect.", MsgBoxStyle.Information, "Product re-stock done:")
+
+            'Exception Handiling - write exceptions to error log
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            VendingMachine.Write_to_ErrorLogFile(ex, MethodName)
+            VendingMachine.EC = VendingMachine.EC + 1
+        End Try
+    End Sub
+    Private Sub Button_RestockCoins_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button_ReloadCoins.Click
+        Try
+            Dim strsql_coins As String = "SELECT CoinQuantity FROM coins"
+            Dim objrs_coins = New ADODB.Recordset
+            Connect_to_DB()
+
+            'Re-stock coins
+            '***************************************************************************************************************
+            'Open the recordset and specify the sql command to get the data required. 
+            objrs_coins.Open(strsql_coins, Cnn, CursorTypeEnum.adOpenKeyset, LockTypeEnum.adLockOptimistic)
+
+            Do While Not objrs_coins.EOF
+                objrs_coins("CoinQuantity").Value = 100
+                objrs_coins.Update()
+                objrs_coins.MoveNext()
+            Loop
+            objrs_coins.Close()
+            '***************************************************************************************************************
+            VendingMachine.Refresh_Indicator()
+            Me.Hide()
+            Cnn.Close() ' close db connection.
+            MsgBox("All coins have been re-loaded to 100. Please press the ""Refresh Coins"" button in the top right corner for the " & _
+                   "changes to take effect.", MsgBoxStyle.Information, "Coin reload done:")
+
+            'Exception Handiling - write exceptions to error log
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            VendingMachine.Write_to_ErrorLogFile(ex, MethodName)
+            VendingMachine.EC = VendingMachine.EC + 1
+        End Try
+
+    End Sub
+    Private Sub TextBox_EC_TextChanged(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles TextBox_EC.TextChanged
+        Try
+            TextBox_EC.Text = "EC: " & VendingMachine.EC
+            'Exception Handiling - write exceptions to error log
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            VendingMachine.Write_to_ErrorLogFile(ex, MethodName)
+            VendingMachine.EC = VendingMachine.EC + 1
+        End Try
+    End Sub
+End Class

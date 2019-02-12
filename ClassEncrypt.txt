@@ -1,0 +1,3 @@
+Public Class EncryptionClass
+    Public Decwrapper As New ClassEncrypt("K3y9>87")
+End Class

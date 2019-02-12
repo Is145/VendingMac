@@ -1,0 +1,658 @@
+Imports System
+Imports System.IO
+Imports ADODB
+Imports System.Data.OleDb
+Public Class VendingMachine
+
+    Public Project_Dir As String = Replace(Application.StartupPath, "\bin\Release", "")
+    Dim Cnn As New OleDbConnection
+    Public Shared Cnn_ADODB As New ADODB.Connection
+    Public sw2 As StreamWriter
+    Public ErrorLog_File As String = Project_Dir & "\Logs\EL_" & Date.Now.ToString("yyyy_MM_dd") & ".txt"
+    Public Shared Amnt_Insrtd As Decimal = 0.0
+    Dim Change As Decimal = 0.0
+    Dim DecryptClass As New EncryptionClass
+    Public Dec As String
+    Public DecArr As String()
+    Dim ConfigStringReader As String
+    Public Shared Status As Boolean = False
+    Public Shared EC As Integer = 0
+
+
+    Public Sub Write_to_ErrorLogFile(ByVal ex As Exception, ByVal MethodName As String) 'Private Sub - Write error to error log file
+        Try
+            sw2 = File.AppendText(ErrorLog_File)
+            sw2.WriteLine(Environment.NewLine & DateTime.Now & " - ERROR - " & ErrorToString() & Environment.NewLine & "Details: " & ex.StackTrace & _
+            " Exception Type: " & ex.GetType.ToString & " Target site: " & ex.TargetSite.ToString & MethodName)
+            sw2.Close()
+        Catch exc As Exception
+        End Try
+    End Sub
+    Private Sub Connect_to_DB() 'Private Sub - Connect to DB
+        Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+
+        Try
+            If Cnn.State = ConnectionState.Closed Then
+                Cnn.ConnectionString = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & Project_Dir & "\DB\VendingMachine.accdb;" & _
+                "Jet OLEDB:Database Password=Vendor123;"
+
+                Cnn.Open()
+            End If
+            ' The SRICex exception below is required becuase an error occurs when the Fill_Combobox_Year() sub is called when 
+            'both make amd model is selected and the combo_box_catalogue or tabcontrol1 is changed.
+        Catch ex As Exception
+            Write_to_ErrorLogFile(ex, MethodName)
+            MsgBox("A database connection error has occured. Please see log for more details.")
+        End Try
+    End Sub 'DB Connection used for Data Adapters
+    Private Sub Connect_to_DB_ADODB() 'Private Sub - Connect to DB
+        Try
+            ConfigStringReader = System.IO.File.ReadAllLines(Project_Dir & "\config\Config.txt")(0)
+            Dec = ""
+            Dec = DecryptClass.Decwrapper.DecryptData(ConfigStringReader)
+            DecArr = Dec.Split(New String() {Environment.NewLine}, StringSplitOptions.None)
+
+
+            If Cnn_ADODB.State = ConnectionState.Closed Then
+                Cnn_ADODB.ConnectionString = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & Project_Dir & "\DB\VendingMachine.accdb;" & _
+                "Jet OLEDB:Database Password=" & DecArr(1) & ";"
+
+                Cnn_ADODB.Open()
+            End If
+
+            'Exception Handling
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+    End Sub 'DB Connection used for Recordsets
+    Private Sub VendingMachine_Load(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles MyBase.Load
+        Try
+
+            'Declare and intialize variables
+            Dim c As Integer = 0 'count
+            Dim Ypos As Integer = 0
+            Dim Ypos2 As Integer = 230
+            Dim strsql_product As String = "SELECT * FROM Products"
+            Dim strsql_coins As String = "SELECT CoinName, CoinQuantity FROM Coins"
+            Dim objrs_product = New ADODB.Recordset
+            Dim objrs_coins = New ADODB.Recordset
+
+
+            'Set Posotion of window
+            Me.Location = New Point(5, 5)
+
+            'Connect_to_DB()
+            Connect_to_DB_ADODB()
+
+
+            'Load Products and product details.
+            '---------------------------------------------------------------------------------------------------------------
+            'Open the recordset and specify the sql command to get the data required. 
+            objrs_product.Open(strsql_product, Cnn_ADODB)
+
+            'Loop through the recordset and create product and price instances 
+            Do While Not objrs_product.EOF
+                c = c + 1 'Counter
+                Ypos = Ypos + 40 'Used to get the Y axis position for the button and stock_ind instances
+                Ypos2 = Ypos2 + 40 'Used to get the Y axis position for the price instances
+
+                'Declare arrays for button and textbox instances
+                Dim product(c) As Button
+                Dim price(c) As TextBox
+                Dim stock_ind(c) As TextBox
+
+                'For product instance
+                product(c) = New Button
+                product(c).Location = New Point(4, Ypos)
+                product(c).Height = 38
+                product(c).Width = 271
+                product(c).ForeColor = Color.White
+                product(c).Font = New Font("Tahoma", 12, FontStyle.Bold)
+                product(c).Text = objrs_product("Description").Value
+                product(c).TextAlign = ContentAlignment.MiddleRight
+                product(c).Name = objrs_product("Product").Value.ToString & "_" & objrs_product("Price").Value.ToString
+                product(c).Image = Image.FromFile(Project_Dir & "/Logos/" & objrs_product("Logo").Value)
+                product(c).ImageAlign = ContentAlignment.MiddleLeft
+                AddHandler product(c).Click, AddressOf product_click
+                GroupBox1.Controls.Add(product(c)) 'Add button instance to the group box.
+
+                'For price instance - used to display the price of the product
+                price(c) = New TextBox
+                price(c).Location = New Point(330, Ypos2)
+                price(c).Height = 20
+                price(c).Width = 65
+                price(c).BackColor = Color.FromArgb(252, 32, 20)
+                price(c).ForeColor = Color.Black
+                price(c).Font = New Font("Tahoma", 12, FontStyle.Bold)
+                price(c).ReadOnly = True
+                price(c).Text = "R" & Format(CSng(objrs_product("Price").Value), "#,##0.00") 'Set the format for the textbox to display the price with 2 decimal places.
+                Controls.Add(price(c)) 'Add textbox instance to the form.
+                price(c).BringToFront()
+
+                'For stock indicator instance - used to indicate the stock level of the product in the vending machine
+                stock_ind(c) = New TextBox
+                stock_ind(c).Location = New Point(20, Ypos2)
+                stock_ind(c).Height = 20
+                stock_ind(c).Width = 20
+                stock_ind(c).BackColor = Color.FromArgb(252, 32, 20)
+                stock_ind(c).Font = New Font("Tahoma", 10)
+                stock_ind(c).Text = objrs_product("Quantity").Value
+                stock_ind(c).ReadOnly = True
+                Controls.Add(stock_ind(c)) 'Add textbox instance to the form.
+                stock_ind(c).BringToFront()
+
+
+                'Set the stock_ind backcolor based on the product stock level.
+                Select Case CInt(objrs_product("Quantity").Value)
+                    Case 0
+                        stock_ind(c).BackColor = Color.Red
+                    Case 1 To 5
+                        stock_ind(c).BackColor = Color.Yellow
+                    Case Else
+                        stock_ind(c).BackColor = Color.Lime
+                End Select
+
+                'Move to the next record in the record set
+                objrs_product.MoveNext()
+            Loop
+
+            'Close record set and DB connection.
+            objrs_product.Close()
+            '---------------------------------------------------------------------------------------------------------------
+
+            'Load Coin details
+            '***************************************************************************************************************
+            'Open the recordset and specify the sql command to get the data required. 
+            objrs_coins.Open(strsql_coins, Cnn_ADODB)
+
+            Do While Not objrs_coins.EOF
+                Select Case objrs_coins("CoinName").Value
+                    Case "50c"
+                        TextBox_50c.ForeColor = Color.Orange
+                        TextBox_50c.Text = objrs_coins("CoinName").Value & "--> " & objrs_coins("CoinQuantity").Value & " available."
+                    Case "R1"
+                        TextBox_R1.ForeColor = Color.Aqua
+                        TextBox_R1.Text = objrs_coins("CoinName").Value & "--> " & objrs_coins("CoinQuantity").Value & " available."
+                    Case "R2"
+                        TextBox_R2.ForeColor = Color.Lime
+                        TextBox_R2.Text = objrs_coins("CoinName").Value & "--> " & objrs_coins("CoinQuantity").Value & " available."
+                    Case "R5"
+                        TextBox_R5.ForeColor = Color.Yellow
+                        TextBox_R5.Text = objrs_coins("CoinName").Value & "--> " & objrs_coins("CoinQuantity").Value & " available."
+                End Select
+                objrs_coins.MoveNext()
+            Loop
+            objrs_coins.Close()
+            '***************************************************************************************************************
+
+            'Close DB connection
+            Cnn_ADODB.Close()
+
+            'Exception Handling
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+
+    End Sub
+    Private Sub Button_InsertCoin_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button_InsertCoin.Click
+        Try
+            Button_Return.Visible = True 'Show return coin button
+            If Application.OpenForms().OfType(Of InsertCoin).Any Then
+                InsertCoin.Close()
+                InsertCoin.Show()
+            Else
+                InsertCoin.Show()
+            End If
+
+            'Exception Handling
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+    End Sub
+    Private Sub Button_Admin_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button_Admin.Click
+        Try
+
+            If Application.OpenForms().OfType(Of Admin).Any Then
+                Admin.Close()
+                Admin.Show()
+            Else
+                Admin.Show()
+            End If
+
+            'Exception Handling
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+    End Sub
+    Public Function GetCoinDenominations(ByVal Change_Due As Decimal) As Boolean
+        Try
+            'Declare array and set its 4 values.
+            Dim coin_denom_list = New Decimal() {0.5, 1.0, 2.0, 5.0}
+            Dim arr_pos As Integer = 3 'Used for array items
+            Dim arr_pos2 As Integer = 3 'Used for array items
+            Dim c As Integer = 0 'Used to check if change can be given with the coin denominations available
+            Dim c2 As Integer = 0
+            Dim c3 As Integer = 0
+            Dim ChangeFlag As Boolean = True 'Pass on to Calling Sub indicating insufficient change
+            Dim Change_Due2 As Decimal = Change_Due 'Uses as place holder if combination of smallest number of coins is unavailable.
+
+            If Cnn_ADODB.State = ConnectionState.Closed Then
+                Cnn_ADODB.Open()
+            End If
+            Dim sql_coins As String
+            Dim objrs_coins As New ADODB.Recordset
+
+            While Change_Due > 0
+                c = c + 1
+
+                'Required for re-cycle if some coins are unavailable for combination of smallest number of coins .
+                '--------------------------------------
+                If c = 100 Then
+                    If arr_pos2 = 0 Then c2 = 20
+                    c2 = c2 + 1
+                    arr_pos2 = arr_pos2 - 1
+                    arr_pos = arr_pos2
+                    Change_Due = Change_Due2
+                    If c2 = 20 Then
+                        ChangeFlag = False
+                        Return ChangeFlag
+                        Exit While
+                        Exit Function
+                    End If
+                End If
+                '--------------------------------------
+
+                'Is Coin Denom less than change due.
+                If coin_denom_list(arr_pos) <= Change_Due Then
+                    sql_coins = "SELECT * FROM COINS WHERE COINVALUE = " & coin_denom_list(arr_pos)
+                    objrs_coins.Open(sql_coins, Cnn_ADODB, CursorTypeEnum.adOpenKeyset, LockTypeEnum.adLockOptimistic)
+
+                    'Below is required for infinite loop issue during a certain scenario
+                    c3 = c3 + 1
+                    If c3 > 200 Then
+                        ChangeFlag = False
+                        Return ChangeFlag
+                        Exit While
+                        Exit Function
+                    End If
+
+                    'Is Coin Denom quantity > 0 
+                    If objrs_coins("CoinQuantity").Value > 0 Then
+                        Change_Due = Change_Due - coin_denom_list(arr_pos)
+                        objrs_coins("CoinQuantity").Value = objrs_coins("CoinQuantity").Value - 1
+                        objrs_coins.Update()
+                        objrs_coins.Close()
+                    ElseIf objrs_coins("CoinQuantity").Value = 0 Then
+                        If arr_pos <> 0 Then arr_pos = arr_pos - 1
+                        objrs_coins.Close()
+                        Continue While
+                    End If 'End for Is Coin Denom quantity > 0
+
+                Else
+                    If arr_pos <> 0 Then arr_pos = arr_pos - 1
+                    Continue While
+                End If 'End for If coin_denom_list(arr_pos) < Change_Due
+
+
+            End While 'End for If Change_Due <> 0
+            ChangeFlag = True
+            Return ChangeFlag
+
+
+            Cnn_ADODB.Close() 'Close DB Connection
+
+            'Exception Handling
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+
+    End Function
+    Private Sub product_click(ByVal sender As System.Object, ByVal e As System.EventArgs)
+        Try
+            Dim selectedBtn As Button = sender
+            Dim GetPos As Integer = InStr(selectedBtn.Name.ToString, "_") 'Used to get product price and product name
+            Dim Price As Decimal = CDec(Mid((selectedBtn.Name), GetPos + 1)) 'Get Price
+            Dim Product As String = Mid((selectedBtn.Name), 1, GetPos - 1).ToString 'Get Name
+            Dim strsql_UpdtStockCnt As String
+            Dim objrs_UpdtPrd As New ADODB.Recordset
+            Dim flag As Boolean = 0
+            Dim DenomResult As Boolean = True
+
+            InsertCoin.Hide()
+
+            'Update Stock Level
+            '---------------------------------------------------------------------------------------------------------------
+            strsql_UpdtStockCnt = "SELECT * FROM PRODUCTS"
+            If Cnn_ADODB.State = ConnectionState.Closed Then
+                Cnn_ADODB.Open()
+            End If
+            objrs_UpdtPrd.Open(strsql_UpdtStockCnt, Cnn_ADODB, CursorTypeEnum.adOpenKeyset, LockTypeEnum.adLockOptimistic)
+            Do While Not objrs_UpdtPrd.EOF
+                If objrs_UpdtPrd("Product").Value = Product And objrs_UpdtPrd("Quantity").Value <> 0 Then
+                    flag = 1
+                    objrs_UpdtPrd("Quantity").Value = objrs_UpdtPrd("Quantity").Value - 1
+                End If
+                objrs_UpdtPrd.Update()
+                objrs_UpdtPrd.MoveNext()
+            Loop
+            objrs_UpdtPrd.Close()
+            '---------------------------------------------------------------------------------------------------------------
+
+            'Check to see if item is out of stock and return money
+            If flag = 0 Then
+                RichTextBox_info.ForeColor = Color.Orange
+                RichTextBox_info.Text = "Sorry, this item is out of stock. Your money has been returned."
+                Amnt_Insrtd = 0.0
+                Refresh_Indicator()
+                Exit Sub
+            End If
+
+            '******
+            'Calculate how much change must be given or if coins inserted are insufficient.
+            If Price <= Amnt_Insrtd Then
+                Change = Amnt_Insrtd - Price
+                If Change > 0.0 Then
+                    'Determine coin denominations for change
+                    DenomResult = GetCoinDenominations(Change)
+                    TextBox_ChangeDue.Text = "R" & Format(CSng(Change), "#,##0.00")
+
+                    'Cancel transaction if change is not available
+                    If DenomResult = False Then
+                        RichTextBox_info.ForeColor = Color.Red
+                        RichTextBox_info.Text = "Insufficient change available. Sorry, the transaction had to be cancelled. - " & _
+                                                "R" & Format(CSng(Amnt_Insrtd), "#,##0.00") & " returned."
+
+                        'Add the item back in the database
+                        '----------------------------------------
+                        objrs_UpdtPrd.Open(strsql_UpdtStockCnt, Cnn_ADODB, CursorTypeEnum.adOpenKeyset, LockTypeEnum.adLockOptimistic)
+                        Do While Not objrs_UpdtPrd.EOF
+                            If objrs_UpdtPrd("Product").Value = Product Then
+                                objrs_UpdtPrd("Quantity").Value = objrs_UpdtPrd("Quantity").Value + 1
+                            End If
+                            objrs_UpdtPrd.Update()
+                            objrs_UpdtPrd.MoveNext()
+                        Loop
+                        objrs_UpdtPrd.Close()
+                        '----------------------------------------
+                        Amnt_Insrtd = 0.0
+                        Change = 0.0
+                        Refresh_Coins()
+                        Refresh_Indicator()
+                        Exit Sub
+                    End If
+
+                    'Carry on with below if change is available.
+                    Amnt_Insrtd = 0.0
+                    RichTextBox_info.ForeColor = Color.Aqua
+                    RichTextBox_info.Text = "Thank You, Enjoy!! Please don't forget your change."
+                    Refresh_Coins()
+                    Refresh_Indicator()
+
+                    'Below is for when no change is required i.e. the exact amount has been inserted.
+                Else
+                    Amnt_Insrtd = 0.0
+                    RichTextBox_info.ForeColor = Color.Aqua
+                    RichTextBox_info.Text = "Thank You, Enjoy!!"
+                    Refresh_Indicator()
+                End If
+
+
+                Me.Controls.Clear() 'removes all the controls on the form
+                InitializeComponent() 'load all the controls again
+                VendingMachine_Load(e, e) 'Load everything in your form load event again
+
+                'Below caters for when an insufficient amount has been inserted for a soecific product.
+            Else
+                RichTextBox_info.ForeColor = Color.Red
+                RichTextBox_info.Text = "Please insert the correct value of coins for your selected item. " & _
+                        "The item that you selected is - R" & Format(CSng(Price), "#,##0.00").ToString
+                'Add the item back in the databse
+                '----------------------------------------
+                objrs_UpdtPrd.Open(strsql_UpdtStockCnt, Cnn_ADODB, CursorTypeEnum.adOpenKeyset, LockTypeEnum.adLockOptimistic)
+                Do While Not objrs_UpdtPrd.EOF
+                    If objrs_UpdtPrd("Product").Value = Product Then
+                        objrs_UpdtPrd("Quantity").Value = objrs_UpdtPrd("Quantity").Value + 1
+                    End If
+                    objrs_UpdtPrd.Update()
+                    objrs_UpdtPrd.MoveNext()
+                Loop
+                objrs_UpdtPrd.Close()
+                '----------------------------------------
+
+            End If
+            If Cnn_ADODB.State = ConnectionState.Open Then
+                Cnn_ADODB.Close()
+            End If
+
+
+            'Exception Handling
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+
+
+    End Sub
+    Sub Mouse_click() Handles Me.MouseClick
+        Try
+            InsertCoin.Hide()
+            Button_Return.Hide()
+            Admin.Hide()
+
+            'Exception Handling
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+    End Sub
+    Sub Me_moved() Handles Me.Move
+        Try
+            InsertCoin.Hide()
+            Button_Return.Hide()
+            Admin.Hide()
+
+            'Exception Handling
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+    End Sub
+    Private Sub Button_Return_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button_Return.Click
+        Try
+            TextBox_AmountInserted.Text = "R0.00"
+            TextBox_ChangeDue.Text = "R0.00"
+            RichTextBox_info.ForeColor = Color.Aqua
+            RichTextBox_info.Text = "R" & Format(CSng(Amnt_Insrtd), "#,##0.00").ToString & " returned."
+            Amnt_Insrtd = 0.0
+            Change = 0.0
+            Application.DoEvents()
+            System.Threading.Thread.Sleep(2000)
+            RichTextBox_info.Clear()
+            Me.Refresh()
+
+            'Exception Handling
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+
+    End Sub
+    Private Sub Button_RefreshProducts_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button_RefreshProducts.Click
+        Try
+            'Declare and intialize variables
+            Dim c As Integer = 0 'count
+            Dim Ypos As Integer = 0
+            Dim Ypos2 As Integer = 230
+            Dim strsql_product As String = "SELECT * FROM Products"
+            Dim objrs_product = New ADODB.Recordset
+
+            If Cnn_ADODB.State = ConnectionState.Closed Then
+                Cnn_ADODB.Open()
+            End If
+
+            'Open the recordset and specify the sql command and DB connection to use to get the data required. 
+            objrs_product.Open(strsql_product, Cnn_ADODB)
+
+            'Loop through the recordset and create product and price instances 
+            Do While Not objrs_product.EOF
+                c = c + 1 'Counter
+                Ypos2 = Ypos2 + 40 'Used to get the Y axis position for the stock instances
+
+                'Refresh Stock counts
+                Dim stock_ind(c) As TextBox
+                stock_ind(c) = New TextBox
+                stock_ind(c).Location = New Point(20, Ypos2)
+                stock_ind(c).Height = 20
+                stock_ind(c).Width = 20
+                stock_ind(c).BackColor = Color.FromArgb(252, 32, 20)
+                stock_ind(c).Font = New Font("Tahoma", 10)
+                stock_ind(c).Text = objrs_product("Quantity").Value
+                stock_ind(c).ReadOnly = True
+                Controls.Add(stock_ind(c)) 'Add textbox instance to the form.
+                stock_ind(c).BringToFront()
+
+                'Set the stock_ind backcolor based on the product stock level.
+                Select Case CInt(objrs_product("Quantity").Value)
+                    Case 0
+                        stock_ind(c).BackColor = Color.Red
+                    Case 1 To 5
+                        stock_ind(c).BackColor = Color.Yellow
+                    Case Else
+                        stock_ind(c).BackColor = Color.Lime
+                End Select
+
+                'Move to the next record in the record set
+                objrs_product.MoveNext()
+            Loop
+
+            'Close record set and DB connection.
+            objrs_product.Close()
+            Cnn_ADODB.Close()
+
+            Refresh_Indicator() 'indicate app refreshing message.
+
+
+            'Exception handling - write the exception to an error log file.
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+
+
+
+    End Sub
+    Private Sub Button_RefreshCoins_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button_RefreshCoins.Click
+        Try
+            Dim strsql_coins As String = "SELECT CoinName, CoinQuantity FROM Coins"
+            Dim objrs_coins = New ADODB.Recordset
+
+            If Cnn_ADODB.State = ConnectionState.Closed Then
+                Cnn_ADODB.Open()
+            End If
+            'Load Coin details
+            '***************************************************************************************************************
+            'Open the recordset and specify the sql command to get the data required. 
+            objrs_coins.Open(strsql_coins, Cnn_ADODB)
+
+            Do While Not objrs_coins.EOF
+                Select Case objrs_coins("CoinName").Value
+                    Case "50c"
+                        TextBox_50c.ForeColor = Color.Orange
+                        TextBox_50c.Text = objrs_coins("CoinName").Value & "--> " & objrs_coins("CoinQuantity").Value & " available."
+                    Case "R1"
+                        TextBox_R1.ForeColor = Color.Aqua
+                        TextBox_R1.Text = objrs_coins("CoinName").Value & "--> " & objrs_coins("CoinQuantity").Value & " available."
+                    Case "R2"
+                        TextBox_R2.ForeColor = Color.Lime
+                        TextBox_R2.Text = objrs_coins("CoinName").Value & "--> " & objrs_coins("CoinQuantity").Value & " available."
+                    Case "R5"
+                        TextBox_R5.ForeColor = Color.Yellow
+                        TextBox_R5.Text = objrs_coins("CoinName").Value & "--> " & objrs_coins("CoinQuantity").Value & " available."
+                End Select
+                objrs_coins.MoveNext()
+            Loop
+            objrs_coins.Close()
+            '***************************************************************************************************************
+            Cnn_ADODB.Close() ' close db connection.
+            Refresh_Indicator() 'indicate app refreshing message.
+
+            'Exception handling - write the exception to an error log file.
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+    End Sub
+    Sub Refresh_Coins()
+        Try
+            Dim strsql_coins As String = "SELECT CoinName, CoinQuantity FROM Coins"
+            Dim objrs_coins = New ADODB.Recordset
+
+            If Cnn_ADODB.State = ConnectionState.Closed Then
+                Cnn_ADODB.Open()
+            End If
+            'Load Coin details
+            '***************************************************************************************************************
+            'Open the recordset and specify the sql command to get the data required. 
+            objrs_coins.Open(strsql_coins, Cnn_ADODB)
+
+            Do While Not objrs_coins.EOF
+                Select Case objrs_coins("CoinName").Value
+                    Case "50c"
+                        TextBox_50c.ForeColor = Color.Orange
+                        TextBox_50c.Text = objrs_coins("CoinName").Value & "--> " & objrs_coins("CoinQuantity").Value & " available."
+                    Case "R1"
+                        TextBox_R1.ForeColor = Color.Aqua
+                        TextBox_R1.Text = objrs_coins("CoinName").Value & "--> " & objrs_coins("CoinQuantity").Value & " available."
+                    Case "R2"
+                        TextBox_R2.ForeColor = Color.Lime
+                        TextBox_R2.Text = objrs_coins("CoinName").Value & "--> " & objrs_coins("CoinQuantity").Value & " available."
+                    Case "R5"
+                        TextBox_R5.ForeColor = Color.Yellow
+                        TextBox_R5.Text = objrs_coins("CoinName").Value & "--> " & objrs_coins("CoinQuantity").Value & " available."
+                End Select
+                objrs_coins.MoveNext()
+            Loop
+            objrs_coins.Close()
+            '***************************************************************************************************************
+            Cnn_ADODB.Close() ' close db connection.
+            'Exception handling - write the exception to an error log file.
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+    End Sub
+    Public Sub Refresh_Indicator() 'Indicate to user that the app is refreshing.
+        Try
+            Label_Refreshing.Visible = True
+            Label_Refreshing.BringToFront()
+            Application.DoEvents()
+            System.Threading.Thread.Sleep(4000)
+            RichTextBox_info.Clear()
+            TextBox_AmountInserted.Text = "R0.00"
+            TextBox_ChangeDue.Text = "R0.00"
+            Label_Refreshing.Visible = False
+            'Exception handling - write the exception to an error log file.
+        Catch ex As Exception
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            Write_to_ErrorLogFile(ex, MethodName)
+            EC = EC + 1
+        End Try
+    End Sub
+End Class

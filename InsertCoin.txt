@@ -1,0 +1,93 @@
+Public Class InsertCoin
+    
+    Private Sub InsertCoin_Load(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles MyBase.Load
+        Try
+
+            Me.Width = 85
+            Me.Location = New Point(VendingMachine.Bounds.Right, 0)
+            Me.Refresh()
+
+        Catch ex As Exception 'Exception Handing
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            VendingMachine.Write_to_ErrorLogFile(ex, MethodName)
+        End Try
+
+
+    End Sub
+    Sub anim() Handles Me.Shown
+        Try
+            Dim InsCoinBtnLoc As Integer = VendingMachine.Button_InsertCoin.Location.Y + 15
+            Me.Refresh()
+            Do Until Me.Location.X = VendingMachine.Bounds.Right - Me.Size.Width
+                Me.Location = New Point(Me.Location.X - 1, InsCoinBtnLoc)
+            Loop
+
+            Dim strsql_coins As String = "SELECT * FROM Coins"
+            Dim objrs_coins = New ADODB.Recordset
+            Dim c As Integer = 0
+            Dim Ypos As Integer = 0
+
+            If VendingMachine.Cnn_ADODB.State = ConnectionState.Closed Then
+                VendingMachine.Cnn_ADODB.Open()
+            End If
+
+            'Open the recordset and specify the sql command and DB connection to use to get the data required. 
+            objrs_coins.Open(strsql_coins, VendingMachine.Cnn_ADODB)
+
+            'Loop through the recordset and create coin instances 
+            Do While Not objrs_coins.EOF
+                c = c + 1
+                If c > 1 Then
+                    Ypos = Ypos + 67 'Used to get the Y axis position for the coin instances
+                End If
+                Dim coin(c) As Button
+                coin(c) = New Button
+                coin(c).Location = New Point(10, Ypos)
+                coin(c).Height = 65
+                coin(c).Width = 75
+                coin(c).ForeColor = Color.Red
+                coin(c).Font = New Font("Tahoma", 12, FontStyle.Bold)
+                coin(c).Text = objrs_coins("CoinName").Value
+                coin(c).TextAlign = ContentAlignment.TopRight
+                coin(c).Name = objrs_coins("CoinName").Value.ToString
+                coin(c).Image = Image.FromFile(VendingMachine.Project_Dir & "/Images/" & objrs_coins("CoinImg").Value)
+                AddHandler coin(c).Click, AddressOf coin_click
+                Controls.Add(coin(c)) 'Add button instance to the group box.
+                objrs_coins.MoveNext()
+            Loop
+            objrs_coins.Close()
+            VendingMachine.Cnn_ADODB.Close()
+
+        Catch ex As Exception 'Exception Handing
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            VendingMachine.Write_to_ErrorLogFile(ex, MethodName)
+        End Try
+    End Sub
+    Private Sub coin_click(ByVal sender As System.Object, ByVal e As System.EventArgs)
+        Try
+            Dim selectedBtn As Button = sender
+            Dim Coin_Value As Decimal
+            Dim GetPos As Integer = InStr(selectedBtn.Name.ToString, "R")
+            If GetPos = 0 Then
+                Coin_Value = 0.5
+            Else
+                Coin_Value = CDec(Mid((selectedBtn.Name), GetPos + 1))
+            End If
+
+            VendingMachine.Amnt_Insrtd = VendingMachine.Amnt_Insrtd + Coin_Value
+            VendingMachine.TextBox_AmountInserted.Text = "R" & Format(CSng(VendingMachine.Amnt_Insrtd), "#,##0.00")
+
+        Catch ex As Exception 'Exception Handing
+            Dim MethodName As String = Environment.NewLine & "Exception caught at: " & System.Reflection.MethodBase.GetCurrentMethod().Name
+            VendingMachine.Write_to_ErrorLogFile(ex, MethodName)
+        End Try
+    End Sub
+    Protected Overrides ReadOnly Property CreateParams() As CreateParams
+        Get
+            ' Turn on WS_EX_TOOLWINDOW style bit
+            Dim cp As CreateParams = MyBase.CreateParams
+            cp.ExStyle = (cp.ExStyle Or 128)
+            Return cp
+        End Get
+    End Property
+End Class
